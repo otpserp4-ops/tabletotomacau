@@ -334,19 +334,13 @@ tbody tr.live-row td:first-child::after {
 
   <!-- Header Logo -->
   <div class="header-top">
-    <img class="logo-icon" src="https://tabelhokiterus.com/logomacau.webp" alt="Macau">
-    <div class="logo-text">
-      <div>
-        <span class="live-text"><span>LIVE</span> DRAW</span>
-        <span class="macau-text"> MACAU</span>
-      </div>
-    </div>
+    <img class="logo-icon" src="https://tabletotomacau-production.up.railway.app/logomacau.webp" alt="Macau">
   </div>
 
   <!-- Banner Iklan -->
   <div class="banner-wrap">
-    <a href="https://ryzo.link/daftarkudatoto" target="_blank">
-      <img src="https://mumon.b-cdn.net/kudatoto.gif" alt="Kudatoto">
+    <a href="https://linkrjb.me/Gass" target="_blank">
+      <img src="https://imgsaya3.io/images/2025/09/07/Comp-1_1-07.09.gif" alt="Kudatoto">
     </a>
   </div>
 

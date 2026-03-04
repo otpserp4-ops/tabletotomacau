@@ -170,7 +170,7 @@ body {
 
 .header-top .logo-icon {
   width: 1080px;
-  height: 1080px;
+  height: 100px;
   object-fit: contain;
   filter: drop-shadow(0 0 18px rgba(201,162,39,.6));
   flex-shrink: 0;

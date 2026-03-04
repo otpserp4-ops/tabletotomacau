@@ -36,7 +36,7 @@ class MacauScraper
         return $html;
     }
 
-    public function getTodaySlots(): array
+    public function getLiveGrouped(): array
     {
         $html  = $this->fetchHtml();
         $dom   = new DOMDocument();
@@ -45,19 +45,25 @@ class MacauScraper
         libxml_clear_errors();
         $xpath = new DOMXPath($dom);
         $rows  = $xpath->query('//table[contains(@class,"theTable")]//tbody/tr');
-        $today = date('Y-m-d');
-        $slots = [];
+        $map   = []; $order = [];
+
         foreach ($rows as $row) {
             $cells = $xpath->query('td', $row);
             if ($cells->length < 3) continue;
             $datetime = trim($cells->item(1)->textContent);
             $nomor    = trim($cells->item(2)->textContent);
             if (!preg_match('/(\d{4}-\d{2}-\d{2})\s*\|\s*(\d{2}:\d{2})/', $datetime, $m)) continue;
-            if ($m[1] !== $today) continue;
+            $key  = $m[1];
             $slot = $this->nearestSlot($m[2]);
-            if (!isset($slots[$slot])) $slots[$slot] = $nomor;
+            if (!isset($map[$key])) {
+                $map[$key] = ['tanggal' => date('d M', strtotime($key)), 'tanggal_raw' => $key, 'slots' => array_fill_keys($this->timeSlots, '')];
+                $order[] = $key;
+            }
+            if ($map[$key]['slots'][$slot] === '') $map[$key]['slots'][$slot] = $nomor;
         }
-        return $slots;
+
+        usort($order, fn($a, $b) => strcmp($b, $a));
+        return array_map(fn($k) => $map[$k], $order);
     }
 
     private function nearestSlot(string $jam): string
@@ -70,9 +76,75 @@ class MacauScraper
 }
 
 // ============================================================
-// DATA DUMMY 30 HARI
+// CLASS: DataStore — otomatis buat & update data.json
+// ============================================================
+class DataStore
+{
+    private string $file;
+    private int    $maxDays;
+
+    public function __construct(string $file, int $maxDays = 30)
+    {
+        $this->file    = $file;
+        $this->maxDays = $maxDays;
+    }
+
+    public function read(): array
+    {
+        if (!file_exists($this->file)) return [];
+        $data = json_decode(file_get_contents($this->file), true);
+        return is_array($data) ? $data : [];
+    }
+
+    // Seed pertama kali jika data.json belum ada / kosong
+    public function seedIfEmpty(array $seedData): void
+    {
+        if (!empty($this->read())) return;
+        $map = [];
+        foreach ($seedData as $row) $map[$row['tanggal_raw']] = $row;
+        krsort($map);
+        $map = array_slice($map, 0, $this->maxDays, true);
+        file_put_contents($this->file, json_encode(array_values($map), JSON_PRETTY_PRINT));
+    }
+
+    // Merge data live ke JSON — data lama TIDAK hilang
+    public function merge(array $liveRows): void
+    {
+        $map = [];
+        foreach ($this->read() as $row) $map[$row['tanggal_raw']] = $row;
+
+        foreach ($liveRows as $liveRow) {
+            $key = $liveRow['tanggal_raw'];
+            if (!isset($map[$key])) {
+                // Tanggal baru → tambah
+                $map[$key] = $liveRow;
+            } else {
+                // Tanggal sudah ada → update slot yang ada datanya
+                foreach ($liveRow['slots'] as $slot => $nomor) {
+                    if ($nomor !== '') $map[$key]['slots'][$slot] = $nomor;
+                }
+            }
+        }
+
+        // Urutkan terbaru di atas, simpan max 30 hari
+        krsort($map);
+        $map = array_slice($map, 0, $this->maxDays, true);
+        file_put_contents($this->file, json_encode(array_values($map), JSON_PRETTY_PRINT));
+    }
+
+    public function getDisplay(): array
+    {
+        $data = $this->read();
+        usort($data, fn($a, $b) => strcmp($b['tanggal_raw'], $a['tanggal_raw']));
+        return array_slice($data, 0, $this->maxDays);
+    }
+}
+
+// ============================================================
+// DATA DUMMY — seed awal (hanya dipakai SEKALI saat data.json kosong)
 // ============================================================
 $slots = ['00:01', '13:00', '16:00', '19:00', '22:00', '23:00'];
+
 $dummyData = [
     ['tanggal'=>'04 Mar','tanggal_raw'=>'2026-03-04','slots'=>['00:01'=>'0814','13:00'=>'3301','16:00'=>'','19:00'=>'','22:00'=>'','23:00'=>'']],
     ['tanggal'=>'03 Mar','tanggal_raw'=>'2026-03-03','slots'=>['00:01'=>'0073','13:00'=>'5723','16:00'=>'5166','19:00'=>'5066','22:00'=>'2360','23:00'=>'5170']],
@@ -106,27 +178,27 @@ $dummyData = [
     ['tanggal'=>'03 Feb','tanggal_raw'=>'2026-02-03','slots'=>['00:01'=>'3659','13:00'=>'1139','16:00'=>'0647','19:00'=>'3262','22:00'=>'8953','23:00'=>'0403']],
 ];
 
-// ── Live scraping hari ini ──
-$todayRaw = date('Y-m-d'); $todayLabel = date('d M');
-$liveSlots = []; $liveError = null;
-try { $scraper = new MacauScraper(); $liveSlots = $scraper->getTodaySlots(); }
-catch (RuntimeException $e) { $liveError = $e->getMessage(); }
+// ============================================================
+// MAIN
+// ============================================================
+$todayRaw  = date('Y-m-d');
+$store     = new DataStore(__DIR__ . '/data.json', 30);
+$liveError = null;
 
-$grouped = $dummyData; $todayExists = false;
-foreach ($grouped as &$row) {
-    if ($row['tanggal_raw'] === $todayRaw) {
-        $todayExists = true;
-        foreach ($liveSlots as $slot => $nomor) $row['slots'][$slot] = $nomor;
-        break;
-    }
+// 1. Buat data.json otomatis dari dummy jika belum ada
+$store->seedIfEmpty($dummyData);
+
+// 2. Scraping rajabandot → merge ke data.json (data lama aman)
+try {
+    $scraper  = new MacauScraper();
+    $liveRows = $scraper->getLiveGrouped();
+    $store->merge($liveRows);
+} catch (RuntimeException $e) {
+    $liveError = $e->getMessage();
 }
-unset($row);
-if (!$todayExists) {
-    $newRow = ['tanggal'=>$todayLabel,'tanggal_raw'=>$todayRaw,'slots'=>array_fill_keys($slots,'')];
-    foreach ($liveSlots as $slot => $nomor) $newRow['slots'][$slot] = $nomor;
-    array_unshift($grouped, $newRow);
-    $grouped = array_slice($grouped, 0, 30);
-}
+
+// 3. Baca dari data.json untuk ditampilkan
+$grouped = $store->getDisplay();
 ?>
 <!DOCTYPE html>
 <html lang="id">
@@ -143,9 +215,6 @@ body {
   min-height: 100vh;
 }
 
-/* ══════════════════════════════
-   HEADER — hitam gold full width
-══════════════════════════════ */
 .header-top {
   width: 100%;
   background: linear-gradient(135deg, #0a0a0a 0%, #1a1400 40%, #0a0a0a 100%);
@@ -158,16 +227,12 @@ body {
   position: relative;
   overflow: hidden;
 }
-
-/* Efek kilap background */
 .header-top::before {
   content: '';
-  position: absolute;
-  inset: 0;
+  position: absolute; inset: 0;
   background: radial-gradient(ellipse 80% 60% at 50% 50%, rgba(201,162,39,.12) 0%, transparent 70%);
   pointer-events: none;
 }
-
 .header-top .logo-icon {
   width: 1080px;
   height: 100px;
@@ -178,41 +243,6 @@ body {
   z-index: 1;
 }
 
-.header-title {
-  position: relative;
-  z-index: 1;
-  display: flex;
-  flex-direction: column;
-  line-height: 1.05;
-}
-
-.header-title .line1 {
-  font-size: clamp(2.4rem, 6vw, 5rem);
-  font-weight: 900;
-  font-style: italic;
-  letter-spacing: .04em;
-  text-transform: uppercase;
-}
-
-.header-title .line1 .word-live  { color: #e74c3c; text-shadow: 0 0 20px rgba(231,76,60,.5); }
-.header-title .line1 .word-draw  { color: #fff;    text-shadow: 0 2px 10px rgba(0,0,0,.8); margin-left: .15em; }
-
-.header-title .line2 {
-  font-size: clamp(2.4rem, 6vw, 5rem);
-  font-weight: 900;
-  font-style: italic;
-  letter-spacing: .06em;
-  text-transform: uppercase;
-  background: linear-gradient(90deg, #c9a227 0%, #f5d87a 40%, #c9a227 70%, #f0c020 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-  filter: drop-shadow(0 2px 6px rgba(0,0,0,.6));
-}
-
-/* ══════════════════════════════
-   BANNER
-══════════════════════════════ */
 .banner-wrap {
   background: #080808;
   text-align: center;
@@ -227,9 +257,6 @@ body {
   display: inline-block;
 }
 
-/* ══════════════════════════════
-   JUDUL BAR
-══════════════════════════════ */
 .judul-bar {
   background: linear-gradient(90deg, #8b6914, #c9a227, #f5d87a, #c9a227, #8b6914);
   text-align: center;
@@ -244,22 +271,11 @@ body {
   text-shadow: 0 1px 2px rgba(255,255,255,.2);
 }
 
-/* ══════════════════════════════
-   TABLE
-══════════════════════════════ */
 table { width:100%; border-collapse:collapse; table-layout:fixed; }
-
-thead tr {
-  background: linear-gradient(180deg, #1a1400, #120e00);
-  border-bottom: 2px solid #c9a227;
-}
+thead tr { background: linear-gradient(180deg, #1a1400, #120e00); border-bottom: 2px solid #c9a227; }
 thead th {
-  color: #c9a227;
-  font-size: .85rem;
-  font-weight: 700;
-  text-align: center;
-  padding: 12px 6px;
-  letter-spacing: .06em;
+  color: #c9a227; font-size: .85rem; font-weight: 700;
+  text-align: center; padding: 12px 6px; letter-spacing: .06em;
   border-right: 1px solid #1a1400;
 }
 thead th:last-child { border-right: none; }
@@ -271,38 +287,25 @@ tbody tr:nth-child(even) { background: #111008; }
 tbody tr:hover           { background: #1a1500; }
 
 tbody td {
-  text-align: center;
-  padding: 10px 6px;
-  font-size: .92rem;
-  color: #d4b54a;
-  font-weight: 700;
-  letter-spacing: .06em;
-  border-right: 1px solid #111;
+  text-align: center; padding: 10px 6px;
+  font-size: .92rem; color: #d4b54a; font-weight: 700;
+  letter-spacing: .06em; border-right: 1px solid #111;
 }
 tbody td:last-child { border-right: none; }
 tbody td:first-child { font-size: .84rem; color: #c9a227; }
 
-/* Live row hari ini */
 tbody tr.live-row { background: #120e00 !important; }
 tbody tr.live-row td { color: #f5d87a; }
 tbody tr.live-row td:first-child::after {
-  content: ' ●';
-  color: #e74c3c;
-  font-size: .5rem;
-  vertical-align: super;
-  animation: blink 1s step-start infinite;
+  content: ' ●'; color: #e74c3c; font-size: .5rem;
+  vertical-align: super; animation: blink 1s step-start infinite;
 }
 
 .kosong { color: #2a2200; font-weight: 400; }
 
-/* Footer */
 .footer-bar {
-  background: #080808;
-  border-top: 1px solid #1a1400;
-  text-align: right;
-  padding: 7px 14px;
-  font-size: .7rem;
-  color: #3a2e00;
+  background: #080808; border-top: 1px solid #1a1400;
+  text-align: right; padding: 7px 14px; font-size: .7rem; color: #3a2e00;
 }
 .footer-bar a { color: #3a2e00; text-decoration: none; }
 .footer-bar a:hover { color: #c9a227; }
@@ -318,24 +321,20 @@ tbody tr.live-row td:first-child::after {
 </head>
 <body>
 
-  <!-- ── HEADER ── -->
   <div class="header-top">
     <img class="logo-icon" src="https://tabelhokiterus.com/logomacau.webp" alt="Macau">
   </div>
 
-  <!-- ── BANNER ── -->
   <div class="banner-wrap">
     <a href="https://linkrjb.me/Gass" target="_blank">
       <img src="https://imgsaya3.io/images/2025/09/07/Comp-1_1-07.09.gif" alt="Banner">
     </a>
   </div>
 
-  <!-- ── JUDUL ── -->
   <div class="judul-bar">
     <h2>Hasil Toto Macau</h2>
   </div>
 
-  <!-- ── TABEL ── -->
   <table>
     <thead>
       <tr>
@@ -357,10 +356,9 @@ tbody tr.live-row td:first-child::after {
     </tbody>
   </table>
 
-  <!-- ── FOOTER ── -->
   <div class="footer-bar">
     Update: <?= date('d M Y H:i:s') ?> &nbsp;|&nbsp;
-    Sumber: Luke Engine</a>
+    Sumber: Luke Engine
   </div>
 
 </body>

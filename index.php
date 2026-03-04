@@ -147,7 +147,7 @@ body {
    HEADER — hitam gold full width
 ══════════════════════════════ */
 .header-top {
-  width: 100%;
+  width: 1080px;
   background: linear-gradient(135deg, #0a0a0a 0%, #1a1400 40%, #0a0a0a 100%);
   border-bottom: 3px solid #c9a227;
   display: flex;
@@ -220,8 +220,8 @@ body {
   border-bottom: 1px solid #1a1400;
 }
 .banner-wrap a img {
-  max-width: 700px;
-  width: 95%;
+  max-width: 1080px;
+  width: 100%;
   border-radius: 8px;
   cursor: pointer;
   display: inline-block;
@@ -321,13 +321,6 @@ tbody tr.live-row td:first-child::after {
   <!-- ── HEADER ── -->
   <div class="header-top">
     <img class="logo-icon" src="https://tabelhokiterus.com/logomacau.webp" alt="Macau">
-    <div class="header-title">
-      <div class="line1">
-        <span class="word-live">LIVE</span>
-        <span class="word-draw"> DRAW</span>
-      </div>
-      <div class="line2">MACAU</div>
-    </div>
   </div>
 
   <!-- ── BANNER ── -->

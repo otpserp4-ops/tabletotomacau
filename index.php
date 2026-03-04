@@ -2,7 +2,6 @@
 
 // ============================================================
 // CLASS: MacauScraper
-// Ambil & parse data dari rajabandot.com
 // ============================================================
 class MacauScraper
 {
@@ -22,22 +21,15 @@ class MacauScraper
         $this->maxDays = $maxDays;
     }
 
-    // ── Fetch HTML via cURL ──────────────────────────────────
     private function fetchHtml(): string
     {
-        if (!function_exists('curl_init')) {
-            throw new RuntimeException('cURL tidak tersedia di server ini.');
-        }
-
         $ch = curl_init();
         curl_setopt_array($ch, [
             CURLOPT_URL            => $this->url,
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_FOLLOWLOCATION => true,
             CURLOPT_TIMEOUT        => $this->timeout,
-            CURLOPT_USERAGENT      => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
-                                    . 'AppleWebKit/537.36 (KHTML, like Gecko) '
-                                    . 'Chrome/120.0.0.0 Safari/537.36',
+            CURLOPT_USERAGENT      => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36',
             CURLOPT_SSL_VERIFYPEER => false,
             CURLOPT_ENCODING       => '',
             CURLOPT_HTTPHEADER     => [
@@ -53,13 +45,11 @@ class MacauScraper
         curl_close($ch);
 
         if (!$html || $code !== 200) {
-            throw new RuntimeException("Gagal mengambil data. HTTP {$code}. {$err}");
+            throw new RuntimeException("Gagal fetch. HTTP {$code}. {$err}");
         }
-
         return $html;
     }
 
-    // ── Parse baris tabel ───────────────────────────────────
     private function parseRows(string $html): array
     {
         $dom = new DOMDocument();
@@ -80,28 +70,19 @@ class MacauScraper
 
             if (!preg_match('/(\d{4}-\d{2}-\d{2})\s*\|\s*(\d{2}:\d{2})/', $datetime, $m)) continue;
 
-            $tanggalRaw = $m[1];
-            $jamRaw     = $m[2];
-            $tanggal    = date('d M', strtotime($tanggalRaw));
-            $slot       = $this->nearestSlot($jamRaw);
-
             $raw[] = [
-                'tanggal_raw' => $tanggalRaw,
-                'tanggal'     => $tanggal,
-                'slot'        => $slot,
+                'tanggal_raw' => $m[1],
+                'tanggal'     => date('d M', strtotime($m[1])),
+                'slot'        => $this->nearestSlot($m[2]),
                 'nomor'       => $nomor,
             ];
         }
-
         return $raw;
     }
 
-    // ── Kelompokkan per tanggal, potong ke maxDays ──────────
     public function getGroupedData(): array
     {
-        $html = $this->fetchHtml();
-        $raw  = $this->parseRows($html);
-
+        $raw   = $this->parseRows($this->fetchHtml());
         $map   = [];
         $order = [];
 
@@ -116,27 +97,20 @@ class MacauScraper
             }
         }
 
-        // Urutkan terbaru di atas
         usort($order, fn($a, $b) => strcmp($b, $a));
-
-        // ── Potong hanya 30 hari terakhir ──
         $order = array_slice($order, 0, $this->maxDays);
-
         return array_map(fn($k) => $map[$k], $order);
     }
 
-    // ── Cocokkan jam ke slot terdekat (toleransi 30 menit) ──
     private function nearestSlot(string $jam): string
     {
         $in   = $this->toMin($jam);
         $best = null;
         $diff = PHP_INT_MAX;
-
         foreach ($this->timeSlots as $slot) {
             $d = abs($in - $this->toMin($slot));
             if ($d < $diff) { $diff = $d; $best = $slot; }
         }
-
         return ($diff <= 30) ? $best : $jam;
     }
 
@@ -148,18 +122,14 @@ class MacauScraper
 }
 
 // ============================================================
-// JALANKAN — max 30 hari
+// JALANKAN
 // ============================================================
 $error   = null;
 $grouped = [];
 $slots   = [];
 
 try {
-    $scraper = new MacauScraper(
-        url:     'https://rajabandot.com/history/result/m17/kosong',
-        timeout: 15,
-        maxDays: 30   // ← ganti angka ini untuk ubah jumlah baris
-    );
+    $scraper = new MacauScraper(maxDays: 30);
     $slots   = $scraper->timeSlots;
     $grouped = $scraper->getGroupedData();
 } catch (RuntimeException $e) {
@@ -169,192 +139,226 @@ try {
 <!DOCTYPE html>
 <html lang="id">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Hasil Toto Macau</title>
-    <link
-        rel="stylesheet"
-        href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css"
-        integrity="sha384-T3c6CoIi6uLrA9TneNEoa7RxnatzjcDSCmG1MXxSR1GAsXEV/Dwwykc2MPK8M2HN"
-        crossorigin="anonymous"
-    >
-    <style>
-        #judul {
-            background: #c0392b;
-            color: #fff;
-            font-size: 1.1rem;
-            letter-spacing: .08em;
-            padding: 10px;
-        }
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Live Draw Macau</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
 
-        thead tr.row-jam th {
-            background: #343a40;
-            color: #fff;
-            text-align: center;
-            font-size: .85rem;
-            padding: 7px 4px;
-        }
-        thead tr.row-jam th:first-child {
-            text-align: left;
-            padding-left: 10px;
-        }
+  body {
+    background: #0a0e1a;
+    font-family: Arial, sans-serif;
+    min-height: 100vh;
+  }
 
-        tbody tr td {
-            text-align: center;
-            vertical-align: middle;
-            font-size: .9rem;
-            padding: 6px 4px;
-        }
-        tbody tr td:first-child {
-            text-align: left;
-            font-weight: 600;
-            padding-left: 10px;
-            color: #212529;
-            white-space: nowrap;
-        }
+  /* ── WRAPPER ── */
+  .wrap {
+    width: 100%;
+    max-width: 100%;
+    overflow-x: auto;
+  }
 
-        /* Baris hari ini highlight */
-        tbody tr:first-child {
-            background: #fff8e1;
-        }
-        tbody tr:first-child td:first-child::after {
-            content: ' ●';
-            color: #e74c3c;
-            font-size: .6rem;
-            vertical-align: super;
-            animation: blink 1s step-start infinite;
-        }
+  /* ── HEADER / LOGO ── */
+  .header-logo {
+    background: #0a0e1a;
+    text-align: center;
+    padding: 18px 10px 10px;
+  }
 
-        .angka {
-            font-weight: 700;
-            color: #c0392b;
-            letter-spacing: .05em;
-        }
+  .header-logo img {
+    max-width: 320px;
+    width: 60%;
+  }
 
-        .kosong {
-            color: #ccc;
-            font-size: .8rem;
-        }
+  /* ── JUDUL BAR ── */
+  .judul-bar {
+    background: #c0392b;
+    text-align: center;
+    padding: 10px 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+  }
 
-        .logo-wrap {
-            text-align: center;
-            padding: 12px 0 6px;
-        }
+  .judul-bar h1 {
+    color: #fff;
+    font-size: 1rem;
+    font-weight: 700;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+  }
 
-        .update-info {
-            font-size: .72rem;
-            color: #6c757d;
-            text-align: right;
-            padding: 4px 10px 6px;
-        }
+  .judul-bar .days-pill {
+    background: rgba(255,255,255,.2);
+    color: #fff;
+    font-size: .65rem;
+    font-weight: 700;
+    padding: 2px 10px;
+    border-radius: 20px;
+    letter-spacing: .08em;
+  }
 
-        .error-box {
-            background: #fff3cd;
-            border: 1px solid #ffc107;
-            border-radius: 6px;
-            padding: 14px 18px;
-            margin: 16px;
-            font-size: .9rem;
-            color: #856404;
-        }
+  /* ── TABLE ── */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
+  }
 
-        /* Badge jumlah hari */
-        .days-badge {
-            display: inline-block;
-            background: rgba(255,255,255,.2);
-            border-radius: 20px;
-            font-size: .65rem;
-            padding: 1px 8px;
-            margin-left: 8px;
-            vertical-align: middle;
-            letter-spacing: .05em;
-        }
+  /* Header row */
+  thead tr {
+    background: #1a2035;
+  }
 
-        @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
-    </style>
+  thead th {
+    color: #7ecfc8;
+    font-size: .82rem;
+    font-weight: 700;
+    text-align: center;
+    padding: 10px 4px;
+    letter-spacing: .05em;
+    border-bottom: 2px solid #c0392b;
+  }
+
+  thead th:first-child {
+    width: 13%;
+  }
+
+  /* Body rows */
+  tbody tr {
+    border-bottom: 1px solid #151c2e;
+    transition: background .15s;
+  }
+
+  tbody tr:nth-child(odd)  { background: #0d1220; }
+  tbody tr:nth-child(even) { background: #111827; }
+  tbody tr:hover           { background: #1a2540; }
+
+  tbody td {
+    text-align: center;
+    padding: 9px 4px;
+    font-size: .88rem;
+    color: #7ecfc8;
+    font-weight: 700;
+    letter-spacing: .05em;
+  }
+
+  /* Tanggal kolom */
+  tbody td:first-child {
+    color: #7ecfc8;
+    font-size: .82rem;
+    font-weight: 700;
+  }
+
+  /* Baris terbaru */
+  tbody tr:first-child td:first-child {
+    position: relative;
+  }
+  tbody tr:first-child td:first-child::after {
+    content: ' ●';
+    color: #e74c3c;
+    font-size: .55rem;
+    vertical-align: super;
+    animation: blink 1s step-start infinite;
+  }
+
+  /* Kosong */
+  .kosong {
+    color: #2a3550;
+    font-size: .75rem;
+    font-weight: 400;
+  }
+
+  /* ── FOOTER ── */
+  .footer-bar {
+    background: #0a0e1a;
+    text-align: right;
+    padding: 6px 12px;
+    font-size: .68rem;
+    color: #2a3550;
+    border-top: 1px solid #151c2e;
+  }
+
+  .footer-bar a { color: #2a3550; text-decoration: none; }
+  .footer-bar a:hover { color: #7ecfc8; }
+
+  /* ── ERROR ── */
+  .error-box {
+    background: #1a0a0a;
+    border: 1px solid #c0392b;
+    color: #e74c3c;
+    padding: 16px 20px;
+    margin: 20px;
+    border-radius: 6px;
+    font-size: .88rem;
+  }
+
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
+
+  /* Mobile */
+  @media (max-width: 500px) {
+    thead th, tbody td { font-size: .72rem; padding: 7px 2px; }
+    .judul-bar h1 { font-size: .85rem; }
+  }
+</style>
 </head>
-<body class="bg-light">
+<body>
+<div class="wrap">
 
-<div class="container-fluid p-0" style="max-width:760px; margin:0 auto;">
-<table class="table table-sm table-bordered table-hover mb-0 bg-white shadow-sm">
+  <!-- Logo -->
+  <div class="header-logo">
+    <img src="https://tabelhokiterus.com/logomacau.webp" alt="Live Draw Macau">
+  </div>
+
+  <!-- Judul -->
+  <div class="judul-bar">
+    <h1>Hasil Toto Macau</h1>
+    <span class="days-pill"><?= count($grouped) ?> Hari</span>
+  </div>
+
+  <?php if ($error): ?>
+    <div class="error-box">⚠️ <?= htmlspecialchars($error) ?></div>
+  <?php else: ?>
+
+  <!-- Tabel -->
+  <table>
     <thead>
-
-        <!-- Logo -->
-        <tr>
-            <td colspan="7" class="logo-wrap p-2">
-                <img
-                    src="https://tabelhokiterus.com/logomacau.webp"
-                    class="img-fluid"
-                    style="max-width:65%;"
-                    alt="Logo Toto Macau"
-                >
-            </td>
-        </tr>
-
-        <!-- Judul -->
-        <tr>
-            <th colspan="7" id="judul" class="text-center text-uppercase">
-                Hasil Toto Macau
-                <span class="days-badge"><?= count($grouped) ?> Hari</span>
-            </th>
-        </tr>
-
-        <!-- Header kolom jam -->
-        <tr class="row-jam">
-            <th>Tanggal</th>
-            <?php foreach ($slots as $s): ?>
-                <th><?= htmlspecialchars($s) ?></th>
-            <?php endforeach; ?>
-        </tr>
-
+      <tr>
+        <th>Tanggal</th>
+        <?php foreach ($slots as $s): ?>
+          <th><?= $s ?></th>
+        <?php endforeach; ?>
+      </tr>
     </thead>
     <tbody>
-
-        <?php if ($error): ?>
-        <tr>
-            <td colspan="7">
-                <div class="error-box">
-                    ⚠️ <strong>Gagal mengambil data:</strong> <?= htmlspecialchars($error) ?><br>
-                    <small>Pastikan server mendukung cURL dan dapat mengakses internet.</small>
-                </div>
-            </td>
-        </tr>
-
-        <?php else: ?>
-        <?php foreach ($grouped as $row): ?>
-        <tr>
-            <td><?= htmlspecialchars($row['tanggal']) ?></td>
-            <?php foreach ($slots as $s): ?>
-                <?php $num = $row['slots'][$s] ?? ''; ?>
-                <td>
-                    <?php if ($num !== ''): ?>
-                        <span class="angka"><?= htmlspecialchars($num) ?></span>
-                    <?php else: ?>
-                        <span class="kosong">-</span>
-                    <?php endif; ?>
-                </td>
-            <?php endforeach; ?>
-        </tr>
+      <?php foreach ($grouped as $row): ?>
+      <tr>
+        <td><?= htmlspecialchars($row['tanggal']) ?></td>
+        <?php foreach ($slots as $s): ?>
+          <?php $num = $row['slots'][$s] ?? ''; ?>
+          <td>
+            <?php if ($num !== ''): ?>
+              <?= htmlspecialchars($num) ?>
+            <?php else: ?>
+              <span class="kosong">-</span>
+            <?php endif; ?>
+          </td>
         <?php endforeach; ?>
-        <?php endif; ?>
-
+      </tr>
+      <?php endforeach; ?>
     </tbody>
-    <tfoot>
-        <tr>
-            <td colspan="7" class="update-info">
-                Menampilkan 30 hari terakhir &nbsp;|&nbsp;
-                Update: <?= date('d M Y H:i:s') ?> &nbsp;|&nbsp;
-                Sumber: <a href="https://rajabandot.com/history/result/m17/kosong" target="_blank" class="text-muted">rajabandot.com</a>
-            </td>
-        </tr>
-    </tfoot>
-</table>
-</div>
+  </table>
 
-<script
-    src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"
-    integrity="sha384-C6RzsynM9kWDrMNeT87bh95OGNyZPhcTNXj1NW7RuBCsyN/o0jlpcV8Qyq46cDfL"
-    crossorigin="anonymous">
-</script>
+  <!-- Footer -->
+  <div class="footer-bar">
+    Menampilkan 30 hari terakhir &nbsp;|&nbsp;
+    Update: <?= date('d M Y H:i:s') ?> &nbsp;|&nbsp;
+    Sumber: <a href="https://rajabandot.com" target="_blank">rajabandot.com</a>
+  </div>
+
+  <?php endif; ?>
+
+</div>
 </body>
 </html>

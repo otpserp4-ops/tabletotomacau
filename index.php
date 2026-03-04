@@ -43,12 +43,10 @@ class MacauScraper
         libxml_use_internal_errors(true);
         $dom->loadHTML($html);
         libxml_clear_errors();
-
         $xpath = new DOMXPath($dom);
         $rows  = $xpath->query('//table[contains(@class,"theTable")]//tbody/tr');
         $today = date('Y-m-d');
         $slots = [];
-
         foreach ($rows as $row) {
             $cells = $xpath->query('td', $row);
             if ($cells->length < 3) continue;
@@ -68,7 +66,6 @@ class MacauScraper
         foreach ($this->timeSlots as $slot) { $d = abs($in - $this->toMin($slot)); if ($d < $diff) { $diff = $d; $best = $slot; } }
         return ($diff <= 30) ? $best : $jam;
     }
-
     private function toMin(string $t): int { [$h, $m] = explode(':', $t); return (int)$h * 60 + (int)$m; }
 }
 
@@ -76,7 +73,6 @@ class MacauScraper
 // DATA DUMMY 30 HARI
 // ============================================================
 $slots = ['00:01', '13:00', '16:00', '19:00', '22:00', '23:00'];
-
 $dummyData = [
     ['tanggal'=>'04 Mar','tanggal_raw'=>'2026-03-04','slots'=>['00:01'=>'0814','13:00'=>'3301','16:00'=>'','19:00'=>'','22:00'=>'','23:00'=>'']],
     ['tanggal'=>'03 Mar','tanggal_raw'=>'2026-03-03','slots'=>['00:01'=>'0073','13:00'=>'5723','16:00'=>'5166','19:00'=>'5066','22:00'=>'2360','23:00'=>'5170']],
@@ -110,24 +106,13 @@ $dummyData = [
     ['tanggal'=>'03 Feb','tanggal_raw'=>'2026-02-03','slots'=>['00:01'=>'3659','13:00'=>'1139','16:00'=>'0647','19:00'=>'3262','22:00'=>'8953','23:00'=>'0403']],
 ];
 
-// ============================================================
-// LIVE SCRAPING HARI INI
-// ============================================================
-$todayRaw   = date('Y-m-d');
-$todayLabel = date('d M');
-$liveSlots  = [];
-$liveError  = null;
+// ── Live scraping hari ini ──
+$todayRaw = date('Y-m-d'); $todayLabel = date('d M');
+$liveSlots = []; $liveError = null;
+try { $scraper = new MacauScraper(); $liveSlots = $scraper->getTodaySlots(); }
+catch (RuntimeException $e) { $liveError = $e->getMessage(); }
 
-try {
-    $scraper   = new MacauScraper();
-    $liveSlots = $scraper->getTodaySlots();
-} catch (RuntimeException $e) {
-    $liveError = $e->getMessage();
-}
-
-// Gabungkan live ke dummy
-$grouped = $dummyData;
-$todayExists = false;
+$grouped = $dummyData; $todayExists = false;
 foreach ($grouped as &$row) {
     if ($row['tanggal_raw'] === $todayRaw) {
         $todayExists = true;
@@ -136,9 +121,8 @@ foreach ($grouped as &$row) {
     }
 }
 unset($row);
-
 if (!$todayExists) {
-    $newRow = ['tanggal' => $todayLabel, 'tanggal_raw' => $todayRaw, 'slots' => array_fill_keys($slots, '')];
+    $newRow = ['tanggal'=>$todayLabel,'tanggal_raw'=>$todayRaw,'slots'=>array_fill_keys($slots,'')];
     foreach ($liveSlots as $slot => $nomor) $newRow['slots'][$slot] = $nomor;
     array_unshift($grouped, $newRow);
     $grouped = array_slice($grouped, 0, 30);
@@ -154,148 +138,153 @@ if (!$todayExists) {
 * { margin:0; padding:0; box-sizing:border-box; }
 
 body {
-  background: #0d1117;
+  background: #0a0a0a;
   font-family: Arial, sans-serif;
   min-height: 100vh;
 }
 
-.container {
-  width: 100%;
-  max-width: 100%;
-  overflow-x: auto;
-}
-
-/* ── HEADER LOGO ── */
+/* ══════════════════════════════
+   HEADER — hitam gold full width
+══════════════════════════════ */
 .header-top {
-  background: linear-gradient(180deg, #0d1117 0%, #141b2d 100%);
+  width: 100%;
+  background: linear-gradient(135deg, #0a0a0a 0%, #1a1400 40%, #0a0a0a 100%);
+  border-bottom: 3px solid #c9a227;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 20px 16px 16px;
-  gap: 16px;
+  padding: 22px 30px;
+  gap: 24px;
+  position: relative;
+  overflow: hidden;
+}
+
+/* Efek kilap background */
+.header-top::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse 80% 60% at 50% 50%, rgba(201,162,39,.12) 0%, transparent 70%);
+  pointer-events: none;
 }
 
 .header-top .logo-icon {
-  width: 80px;
-  height: 80px;
+  width: 110px;
+  height: 110px;
   object-fit: contain;
+  filter: drop-shadow(0 0 18px rgba(201,162,39,.6));
+  flex-shrink: 0;
+  position: relative;
+  z-index: 1;
 }
 
-.header-top .logo-text {
+.header-title {
+  position: relative;
+  z-index: 1;
   display: flex;
   flex-direction: column;
-  line-height: 1;
+  line-height: 1.05;
 }
 
-.header-top .live-text {
-  font-size: 2.8rem;
+.header-title .line1 {
+  font-size: clamp(2.4rem, 6vw, 5rem);
   font-weight: 900;
   font-style: italic;
-  color: #fff;
-  text-shadow: 2px 2px 8px rgba(0,0,0,.5);
-  letter-spacing: .02em;
-}
-
-.header-top .live-text span {
-  color: #e74c3c;
-}
-
-.header-top .draw-text {
-  font-size: 2.8rem;
-  font-weight: 900;
-  font-style: italic;
-  color: #fff;
-  text-shadow: 2px 2px 8px rgba(0,0,0,.5);
-  letter-spacing: .02em;
-}
-
-.header-top .macau-text {
-  font-size: 2.8rem;
-  font-weight: 900;
-  font-style: italic;
-  background: linear-gradient(90deg, #e74c3c, #ff6b35);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-  text-shadow: none;
-  letter-spacing: .02em;
-}
-
-/* ── BANNER IKLAN ── */
-.banner-wrap {
-  background: #0d1117;
-  text-align: center;
-  padding: 10px 16px;
-}
-
-.banner-wrap a img {
-  max-width: 600px;
-  width: 90%;
-  border-radius: 6px;
-  cursor: pointer;
-}
-
-/* ── JUDUL BAR ── */
-.judul-bar {
-  background: #c0392b;
-  text-align: center;
-  padding: 9px 16px;
-}
-
-.judul-bar h2 {
-  color: #fff;
-  font-size: .95rem;
-  font-weight: 700;
-  letter-spacing: .15em;
+  letter-spacing: .04em;
   text-transform: uppercase;
 }
 
-/* ── TABLE ── */
-table {
-  width: 100%;
-  border-collapse: collapse;
-  table-layout: fixed;
+.header-title .line1 .word-live  { color: #e74c3c; text-shadow: 0 0 20px rgba(231,76,60,.5); }
+.header-title .line1 .word-draw  { color: #fff;    text-shadow: 0 2px 10px rgba(0,0,0,.8); margin-left: .15em; }
+
+.header-title .line2 {
+  font-size: clamp(2.4rem, 6vw, 5rem);
+  font-weight: 900;
+  font-style: italic;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  background: linear-gradient(90deg, #c9a227 0%, #f5d87a 40%, #c9a227 70%, #f0c020 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  filter: drop-shadow(0 2px 6px rgba(0,0,0,.6));
 }
 
-/* Header row */
+/* ══════════════════════════════
+   BANNER
+══════════════════════════════ */
+.banner-wrap {
+  background: #080808;
+  text-align: center;
+  padding: 12px 20px;
+  border-bottom: 1px solid #1a1400;
+}
+.banner-wrap a img {
+  max-width: 700px;
+  width: 95%;
+  border-radius: 8px;
+  cursor: pointer;
+  display: inline-block;
+}
+
+/* ══════════════════════════════
+   JUDUL BAR
+══════════════════════════════ */
+.judul-bar {
+  background: linear-gradient(90deg, #8b6914, #c9a227, #f5d87a, #c9a227, #8b6914);
+  text-align: center;
+  padding: 10px 16px;
+}
+.judul-bar h2 {
+  color: #0a0a0a;
+  font-size: 1rem;
+  font-weight: 900;
+  letter-spacing: .18em;
+  text-transform: uppercase;
+  text-shadow: 0 1px 2px rgba(255,255,255,.2);
+}
+
+/* ══════════════════════════════
+   TABLE
+══════════════════════════════ */
+table { width:100%; border-collapse:collapse; table-layout:fixed; }
+
 thead tr {
-  background: #1a2035;
-  border-bottom: 2px solid #c0392b;
+  background: linear-gradient(180deg, #1a1400, #120e00);
+  border-bottom: 2px solid #c9a227;
 }
-
 thead th {
-  color: #5bc8c0;
+  color: #c9a227;
   font-size: .85rem;
   font-weight: 700;
   text-align: center;
-  padding: 11px 6px;
-  letter-spacing: .04em;
-  border-right: 1px solid #0d1117;
+  padding: 12px 6px;
+  letter-spacing: .06em;
+  border-right: 1px solid #1a1400;
 }
-
 thead th:last-child { border-right: none; }
-thead th:first-child { width: 14%; text-align: center; }
+thead th:first-child { width: 14%; }
 
-/* Body */
-tbody tr { border-bottom: 1px solid #0d1117; transition: background .12s; }
-tbody tr:nth-child(odd)  { background: #111827; }
-tbody tr:nth-child(even) { background: #0f1520; }
-tbody tr:hover           { background: #1c2a40; }
+tbody tr { border-bottom: 1px solid #111; transition: background .12s; }
+tbody tr:nth-child(odd)  { background: #0d0d0d; }
+tbody tr:nth-child(even) { background: #111008; }
+tbody tr:hover           { background: #1a1500; }
 
 tbody td {
   text-align: center;
   padding: 10px 6px;
-  font-size: .9rem;
-  color: #5bc8c0;
+  font-size: .92rem;
+  color: #d4b54a;
   font-weight: 700;
-  letter-spacing: .05em;
-  border-right: 1px solid #0d1117;
+  letter-spacing: .06em;
+  border-right: 1px solid #111;
 }
 tbody td:last-child { border-right: none; }
-tbody td:first-child { font-size: .85rem; }
+tbody td:first-child { font-size: .84rem; color: #c9a227; }
 
-/* Live baris hari ini */
-tbody tr.live-row td { color: #7ed8d0; }
+/* Live row hari ini */
+tbody tr.live-row { background: #120e00 !important; }
+tbody tr.live-row td { color: #f5d87a; }
 tbody tr.live-row td:first-child::after {
   content: ' ●';
   color: #e74c3c;
@@ -304,52 +293,56 @@ tbody tr.live-row td:first-child::after {
   animation: blink 1s step-start infinite;
 }
 
-.kosong { color: #1e2d40; font-weight: 400; }
+.kosong { color: #2a2200; font-weight: 400; }
 
 /* Footer */
 .footer-bar {
-  background: #0d1117;
+  background: #080808;
+  border-top: 1px solid #1a1400;
   text-align: right;
-  padding: 6px 14px;
+  padding: 7px 14px;
   font-size: .7rem;
-  color: #1e3050;
-  border-top: 1px solid #0d1117;
+  color: #3a2e00;
 }
-.footer-bar a { color: #1e3050; text-decoration: none; }
-.footer-bar a:hover { color: #5bc8c0; }
+.footer-bar a { color: #3a2e00; text-decoration: none; }
+.footer-bar a:hover { color: #c9a227; }
 
 @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
 
 @media (max-width:600px) {
-  .header-top .live-text,
-  .header-top .draw-text,
-  .header-top .macau-text { font-size: 1.6rem; }
-  .header-top .logo-icon { width: 50px; height: 50px; }
+  .header-top { padding: 16px 14px; gap: 14px; }
+  .header-top .logo-icon { width: 70px; height: 70px; }
   thead th, tbody td { font-size: .72rem; padding: 8px 3px; }
 }
 </style>
 </head>
 <body>
-<div class="container">
 
-  <!-- Header Logo -->
+  <!-- ── HEADER ── -->
   <div class="header-top">
-    <img class="logo-icon" src="https://tabletotomacau-production.up.railway.app/logomacau.webp" alt="Macau">
+    <img class="logo-icon" src="https://tabelhokiterus.com/logomacau.webp" alt="Macau">
+    <div class="header-title">
+      <div class="line1">
+        <span class="word-live">LIVE</span>
+        <span class="word-draw"> DRAW</span>
+      </div>
+      <div class="line2">MACAU</div>
+    </div>
   </div>
 
-  <!-- Banner Iklan -->
+  <!-- ── BANNER ── -->
   <div class="banner-wrap">
     <a href="https://linkrjb.me/Gass" target="_blank">
-      <img src="https://imgsaya3.io/images/2025/09/07/Comp-1_1-07.09.gif" alt="Kudatoto">
+      <img src="https://imgsaya3.io/images/2025/09/07/Comp-1_1-07.09.gif" alt="Banner">
     </a>
   </div>
 
-  <!-- Judul Bar -->
+  <!-- ── JUDUL ── -->
   <div class="judul-bar">
     <h2>Hasil Toto Macau</h2>
   </div>
 
-  <!-- Tabel -->
+  <!-- ── TABEL ── -->
   <table>
     <thead>
       <tr>
@@ -371,12 +364,11 @@ tbody tr.live-row td:first-child::after {
     </tbody>
   </table>
 
-  <!-- Footer -->
+  <!-- ── FOOTER ── -->
   <div class="footer-bar">
     Update: <?= date('d M Y H:i:s') ?> &nbsp;|&nbsp;
     Sumber: <a href="https://rajabandot.com" target="_blank">rajabandot.com</a>
   </div>
 
-</div>
 </body>
 </html>

@@ -360,7 +360,7 @@ tbody tr.live-row td:first-child::after {
   <!-- ── FOOTER ── -->
   <div class="footer-bar">
     Update: <?= date('d M Y H:i:s') ?> &nbsp;|&nbsp;
-    Sumber: <a href="https://rajabandot.com" target="_blank">rajabandot.com</a>
+    Sumber: Luke Engine</a>
   </div>
 
 </body>

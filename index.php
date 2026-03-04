@@ -147,7 +147,7 @@ body {
    HEADER — hitam gold full width
 ══════════════════════════════ */
 .header-top {
-  width: 1080px;
+  width: 100%;
   background: linear-gradient(135deg, #0a0a0a 0%, #1a1400 40%, #0a0a0a 100%);
   border-bottom: 3px solid #c9a227;
   display: flex;
@@ -169,8 +169,8 @@ body {
 }
 
 .header-top .logo-icon {
-  width: 110px;
-  height: 110px;
+  width: 1080px;
+  height: 1080px;
   object-fit: contain;
   filter: drop-shadow(0 0 18px rgba(201,162,39,.6));
   flex-shrink: 0;

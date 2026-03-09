@@ -83,11 +83,16 @@ class DataStore
     public function __construct(int $maxDays = 30)
     {
         $this->maxDays = $maxDays;
-        $dsn = getenv('DATABASE_URL');
+        $dsn = getenv('DATABASE_URL') ?: getenv('POSTGRES_URL') ?: '';
+        if (!$dsn) throw new RuntimeException("DATABASE_URL tidak ditemukan.");
+        $dsn = preg_replace('/^postgres:\/\//', 'postgresql://', $dsn);
         $p   = parse_url($dsn);
+        if (empty($p['host'])) throw new RuntimeException("Format DATABASE_URL tidak valid.");
+        $dbname = ltrim($p['path'] ?? '/railway', '/');
+        $port   = $p['port'] ?? 5432;
         $this->pdo = new PDO(
-            "pgsql:host={$p['host']};port={$p['port']};dbname=" . ltrim($p['path'], '/'),
-            $p['user'], $p['pass'],
+            "pgsql:host={$p['host']};port={$port};dbname={$dbname}",
+            $p['user'] ?? '', $p['pass'] ?? '',
             [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]
         );
         $this->pdo->exec("

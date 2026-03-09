@@ -83,7 +83,7 @@ class DataStore
     public function __construct(int $maxDays = 30)
     {
         $this->maxDays = $maxDays;
-        $dsn = 'postgresql://postgres:OtWFCuZFeVCpzmGWqVrReXGmtAlIEEGd@postgres.railway.internal:5432/railway';
+        $dsn = 'postgresql://postgres:OtWFCuZFeVCpzmGWqVrReXGmtAlIEEGd@maglev.proxy.rlwy.net:55809/railway';
         $dsn = preg_replace('/^postgres:\/\//', 'postgresql://', $dsn);
         $p   = parse_url($dsn);
         if (empty($p['host'])) throw new RuntimeException("Format DATABASE_URL tidak valid.");

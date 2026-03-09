@@ -89,9 +89,14 @@ class DataStore
     {
         $this->maxDays = $maxDays;
 
-        // Ambil DATABASE_URL dari environment Railway
-        $dsn = getenv('DATABASE_URL') ?: getenv('POSTGRES_URL') ?: '';
-        if (!$dsn) throw new RuntimeException("DATABASE_URL tidak ditemukan.");
+        // Ambil DATABASE_URL dari environment Railway (coba semua cara)
+        $dsn = getenv('DATABASE_URL')
+            ?: ($_ENV['DATABASE_URL'] ?? '')
+            ?: ($_SERVER['DATABASE_URL'] ?? '')
+            ?: getenv('POSTGRES_URL')
+            ?: ($_ENV['POSTGRES_URL'] ?? '')
+            ?: '';
+        if (!$dsn) throw new RuntimeException("DATABASE_URL tidak ditemukan. ENV: " . json_encode(array_keys($_ENV)));
 
         // Railway kadang pakai format postgres:// — normalize ke postgresql://
         $dsn = preg_replace('/^postgres:\/\//', 'postgresql://', $dsn);

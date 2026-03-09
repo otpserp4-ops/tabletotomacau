@@ -2,7 +2,9 @@
     frankenphp
 }
 
-:80 {
+:{$PORT:80} {
     root * /app
-    php_server
+    php_server {
+        env DATABASE_URL {$DATABASE_URL}
+    }
 }

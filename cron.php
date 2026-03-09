@@ -1,7 +1,6 @@
 <?php
 // ============================================================
-// CRON JOB — Jalankan setiap jam oleh Railway
-// Tugasnya: scraping rajabandot → simpan ke data.json
+// CRON JOB — scraping rajabandot → simpan ke PostgreSQL
 // ============================================================
 
 class MacauScraper
@@ -78,54 +77,83 @@ class MacauScraper
 
 class DataStore
 {
-    private string $file;
-    private int    $maxDays;
+    private PDO $pdo;
+    private int $maxDays;
 
-    public function __construct(string $file, int $maxDays = 30)
+    public function __construct(int $maxDays = 30)
     {
-        $this->file    = $file;
         $this->maxDays = $maxDays;
+        $dsn = getenv('DATABASE_URL');
+        $p   = parse_url($dsn);
+        $this->pdo = new PDO(
+            "pgsql:host={$p['host']};port={$p['port']};dbname=" . ltrim($p['path'], '/'),
+            $p['user'], $p['pass'],
+            [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]
+        );
+        $this->pdo->exec("
+            CREATE TABLE IF NOT EXISTS macau_results (
+                tanggal_raw DATE PRIMARY KEY,
+                tanggal     VARCHAR(10) NOT NULL,
+                slot_0001   VARCHAR(4) DEFAULT '',
+                slot_1300   VARCHAR(4) DEFAULT '',
+                slot_1600   VARCHAR(4) DEFAULT '',
+                slot_1900   VARCHAR(4) DEFAULT '',
+                slot_2200   VARCHAR(4) DEFAULT '',
+                slot_2300   VARCHAR(4) DEFAULT '',
+                updated_at  TIMESTAMP DEFAULT NOW()
+            )
+        ");
     }
 
-    public function read(): array
+    public function merge(array $liveRows): int
     {
-        if (!file_exists($this->file)) return [];
-        $data = json_decode(file_get_contents($this->file), true);
-        return is_array($data) ? $data : [];
-    }
-
-    public function merge(array $liveRows): void
-    {
-        $map = [];
-        foreach ($this->read() as $row) $map[$row['tanggal_raw']] = $row;
-
-        foreach ($liveRows as $liveRow) {
-            $key = $liveRow['tanggal_raw'];
-            if (!isset($map[$key])) {
-                $map[$key] = $liveRow;
-            } else {
-                foreach ($liveRow['slots'] as $slot => $nomor) {
-                    if ($nomor !== '') $map[$key]['slots'][$slot] = $nomor;
-                }
-            }
+        $count = 0;
+        foreach ($liveRows as $row) {
+            $s = $row['slots'];
+            $stmt = $this->pdo->prepare("
+                INSERT INTO macau_results
+                    (tanggal_raw, tanggal, slot_0001, slot_1300, slot_1600, slot_1900, slot_2200, slot_2300)
+                VALUES (:dr, :tgl, :s1, :s2, :s3, :s4, :s5, :s6)
+                ON CONFLICT (tanggal_raw) DO UPDATE SET
+                    slot_0001  = CASE WHEN EXCLUDED.slot_0001 <> '' THEN EXCLUDED.slot_0001 ELSE macau_results.slot_0001 END,
+                    slot_1300  = CASE WHEN EXCLUDED.slot_1300 <> '' THEN EXCLUDED.slot_1300 ELSE macau_results.slot_1300 END,
+                    slot_1600  = CASE WHEN EXCLUDED.slot_1600 <> '' THEN EXCLUDED.slot_1600 ELSE macau_results.slot_1600 END,
+                    slot_1900  = CASE WHEN EXCLUDED.slot_1900 <> '' THEN EXCLUDED.slot_1900 ELSE macau_results.slot_1900 END,
+                    slot_2200  = CASE WHEN EXCLUDED.slot_2200 <> '' THEN EXCLUDED.slot_2200 ELSE macau_results.slot_2200 END,
+                    slot_2300  = CASE WHEN EXCLUDED.slot_2300 <> '' THEN EXCLUDED.slot_2300 ELSE macau_results.slot_2300 END,
+                    updated_at = NOW()
+            ");
+            $stmt->execute([
+                ':dr'  => $row['tanggal_raw'],
+                ':tgl' => $row['tanggal'],
+                ':s1'  => $s['00:01'] ?? '',
+                ':s2'  => $s['13:00'] ?? '',
+                ':s3'  => $s['16:00'] ?? '',
+                ':s4'  => $s['19:00'] ?? '',
+                ':s5'  => $s['22:00'] ?? '',
+                ':s6'  => $s['23:00'] ?? '',
+            ]);
+            $count++;
         }
-
-        krsort($map);
-        $map = array_slice($map, 0, $this->maxDays, true);
-        file_put_contents($this->file, json_encode(array_values($map), JSON_PRETTY_PRINT));
+        // Hapus data lebih dari 30 hari
+        $this->pdo->exec("
+            DELETE FROM macau_results WHERE tanggal_raw NOT IN (
+                SELECT tanggal_raw FROM macau_results ORDER BY tanggal_raw DESC LIMIT {$this->maxDays}
+            )
+        ");
+        return $count;
     }
 }
 
 // ── JALANKAN ──
-$store = new DataStore(__DIR__ . '/data.json', 30);
-$time  = date('Y-m-d H:i:s');
-
+$time = date('Y-m-d H:i:s');
 try {
+    $store    = new DataStore(30);
     $scraper  = new MacauScraper();
     $liveRows = $scraper->getLiveGrouped();
-    $store->merge($liveRows);
-    echo "[{$time}] OK — " . count($liveRows) . " tanggal diproses, data.json diperbarui.\n";
-} catch (RuntimeException $e) {
+    $n        = $store->merge($liveRows);
+    echo "[{$time}] OK — {$n} tanggal diproses, database diperbarui.\n";
+} catch (Exception $e) {
     echo "[{$time}] ERROR — " . $e->getMessage() . "\n";
     exit(1);
 }

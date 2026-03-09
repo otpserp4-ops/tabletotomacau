@@ -90,7 +90,7 @@ class DataStore
         $this->maxDays = $maxDays;
 
         // Koneksi langsung — tidak perlu environment variable
-        $dsn = 'postgresql://postgres:OtWFCuZFeVCpzmGWqVrReXGmtAlIEEGd@postgres.railway.internal:5432/railway';
+        $dsn = 'postgresql://postgres:OtWFCuZFeVCpzmGWqVrReXGmtAlIEEGd@maglev.proxy.rlwy.net:55809/railway';
 
         // Railway kadang pakai format postgres:// — normalize ke postgresql://
         $dsn = preg_replace('/^postgres:\/\//', 'postgresql://', $dsn);

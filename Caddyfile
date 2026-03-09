@@ -1,5 +1,6 @@
 {
     frankenphp
+    auto_https off
 }
 
 :{$PORT:80} {
